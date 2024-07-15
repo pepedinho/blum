@@ -1,5 +1,8 @@
 pub mod buffer_mod {
     use lazy_static::lazy_static;
+    use std::fs::File;
+    use std::io::{BufRead, BufReader, Write};
+    use std::path::Path;
     use std::sync::Mutex;
     use std::{io, time::Duration};
 
@@ -24,6 +27,7 @@ pub mod buffer_mod {
         pub pointer_pos: Coord,
         pub max_x: usize,
         pub max_y: usize,
+        pub filename: Vec<String>,
         pub container: Vec<Vec<char>>,
     }
 
@@ -34,17 +38,41 @@ pub mod buffer_mod {
             Coord { x, y }
         }
         pub fn display(&self) {
-            println!("x: {} y: {}", self.x, self.y);
+            print!("x: {} y: {}", self.x, self.y);
         }
     }
 
     impl Buffer {
-        pub fn init(x: usize, y: usize) -> Buffer {
+        pub fn save_to_file(&self, filename: &str) -> io::Result<()> {
+            let mut file = File::create(filename)?;
+            for row in &self.container {
+                for &cell in row {
+                    write!(file, "{}", cell)?;
+                }
+                writeln!(file)?;
+            }
+            Ok(())
+        }
+        pub fn load_from_file(&mut self, filename: &str) -> io::Result<()> {
+            let file = File::open(filename)?;
+            let reader = BufReader::new(file);
+            for (y, line) in reader.lines().enumerate() {
+                let line = line?;
+                for (x, char) in line.chars().enumerate() {
+                    if x < self.max_x && y < self.max_y {
+                        self.container[y][x] = char;
+                    }
+                }
+            }
+            Ok(())
+        }
+        pub fn init(x: usize, y: usize, filename: Vec<String>) -> Buffer {
             let pointer_pos = Coord::init();
             let container: Vec<Vec<char>> = vec![vec![' '; x as usize]; y as usize];
             let max_x = x;
             let max_y = y;
             Buffer {
+                filename,
                 max_x,
                 max_y,
                 pointer_pos,
@@ -213,13 +241,24 @@ pub mod buffer_mod {
             if direction == 'l' {
                 self.put_on(coord.x, coord.y, ' ');
             } else if direction == 'e' {
-                self.put_on(coord.x, coord.y, ' ');
+                self.put_on(coord.x, coord.y, '\n');
             }
         }
+
         pub fn listen(&mut self) -> io::Result<()> {
             let mut coord = Coord::init();
-            execute!(io::stdout(), terminal::Clear(ClearType::All));
+            execute!(io::stdout(), terminal::Clear(ClearType::All))?;
             terminal::enable_raw_mode()?;
+            let mut command_mode = false;
+            let mut command_buffer = String::new();
+            if self.filename.len() > 1 {
+                let filename = self.filename[1].clone();
+                if Path::new(self.filename[1].as_str()).exists() {
+                    if let Err(e) = self.load_from_file(filename.as_str()) {
+                        eprintln!("error during loading file : {}", e);
+                    }
+                }
+            }
             loop {
                 if event::poll(Duration::from_millis(5))? {
                     if let event::Event::Key(KeyEvent {
@@ -229,52 +268,107 @@ pub mod buffer_mod {
                         kind: _,
                     }) = event::read()?
                     {
-                        match code {
-                            KeyCode::Esc => break,
-                            KeyCode::Up => {
-                                self.destroy_pointer(&mut coord, 'l');
-                                self.moove_on(&mut coord, 'u', '|');
+                        if command_mode {
+                            match code {
+                                KeyCode::Enter => match command_buffer.as_str() {
+                                    ":q" => break,
+                                    ":w" => {
+                                        if self.filename.len() > 1 {
+                                            let filename = self.filename[1].clone();
+                                            if let Err(e) = self.save_to_file(filename.as_str()) {
+                                                eprintln!("error during saving : {}", e);
+                                            }
+                                        }
+                                        command_mode = false;
+                                    }
+                                    ":wq" => {
+                                        if self.filename.len() > 1 {
+                                            let filename = self.filename[1].clone();
+                                            if let Err(e) = self.save_to_file(filename.as_str()) {
+                                                eprintln!("error during saving : {}", e);
+                                            }
+                                        }
+                                        break;
+                                    }
+                                    _ => {}
+                                },
+                                KeyCode::Esc => {
+                                    command_mode = false;
+                                    command_buffer.clear();
+                                }
+                                KeyCode::Char(c) => {
+                                    command_buffer.push(c);
+                                }
+                                KeyCode::Backspace => {
+                                    command_buffer.pop();
+                                }
+                                _ => {}
                             }
-                            KeyCode::Down => {
-                                self.destroy_pointer(&mut coord, 'l');
-                                self.moove_on(&mut coord, 'd', '|');
+                            self.display_command(&command_buffer);
+                        } else {
+                            match code {
+                                KeyCode::Esc => {
+                                    command_buffer.clear();
+                                    command_mode = true;
+                                }
+                                KeyCode::Up => {
+                                    self.destroy_pointer(&mut coord, 'l');
+                                    self.moove_on(&mut coord, 'u', '|');
+                                }
+                                KeyCode::Down => {
+                                    self.destroy_pointer(&mut coord, 'l');
+                                    self.moove_on(&mut coord, 'd', '|');
+                                }
+                                KeyCode::Left => {
+                                    self.destroy_pointer(&mut coord, 'l');
+                                    self.moove_on(&mut coord, 'l', '|');
+                                }
+                                KeyCode::Right => {
+                                    self.destroy_pointer(&mut coord, 'l');
+                                    self.moove_on(&mut coord, 'r', '|');
+                                }
+                                KeyCode::Char(c) => {
+                                    self.put_on(self.pointer_pos.x, self.pointer_pos.y, c);
+                                    self.write_on(&mut coord, 'r', '|');
+                                }
+                                KeyCode::Backspace => {
+                                    self.destroy_pointer(&mut coord, 'l');
+                                    self.write_on(&mut coord, 'l', '|');
+                                }
+                                KeyCode::Enter => {
+                                    self.destroy_pointer(&mut coord, 'e');
+                                    self.write_on(&mut coord, 'e', '|');
+                                }
+                                _ => {}
                             }
-                            KeyCode::Left => {
-                                self.destroy_pointer(&mut coord, 'l');
-                                self.moove_on(&mut coord, 'l', '|');
-                            }
-                            KeyCode::Right => {
-                                self.destroy_pointer(&mut coord, 'l');
-                                self.moove_on(&mut coord, 'r', '|');
-                            }
-                            KeyCode::Char(c) => {
-                                self.put_on(self.pointer_pos.x, self.pointer_pos.y, c);
-                                self.write_on(&mut coord, 'r', '|');
-                            }
-                            KeyCode::Backspace => {
-                                self.destroy_pointer(&mut coord, 'l');
-                                self.write_on(&mut coord, 'l', '|');
-                            }
-                            KeyCode::Enter => {
-                                self.destroy_pointer(&mut coord, 'e');
-                                self.write_on(&mut coord, 'e', '|');
-                            }
-                            _ => {}
+                            self.super_display();
                         }
                         //execute!(io::stdout(), terminal::Clear(ClearType::All))?;
-                        self.super_display();
                     }
                 }
             }
             Ok(())
         }
+        pub fn display_command(&self, command: &String) {
+            self.super_display();
+            execute!(io::stdout(), MoveTo(0, self.max_y as u16)).unwrap();
+            print!("{}", command);
+            io::stdout().flush().unwrap();
+        }
         pub fn super_display(&self) {
+            execute!(
+                io::stdout(),
+                MoveTo((self.max_x - 10) as u16, self.max_y as u16)
+            )
+            .unwrap();
             self.pointer_pos.display();
             for (y, row) in self.container.iter().enumerate() {
                 execute!(io::stdout(), MoveTo(0, y as u16)).unwrap();
                 for (x, cell) in row.iter().enumerate() {
                     if self.pointer_pos.x == x && self.pointer_pos.y == y {
                         print!("{}", cell.with(Color::Red));
+                    } else if *cell == '\n' {
+                        print!(" ");
                     } else {
                         print!("{}", cell);
                     }
@@ -282,6 +376,7 @@ pub mod buffer_mod {
                 println!();
             }
             println!();
+            io::stdout().flush().unwrap();
         }
     }
 }
