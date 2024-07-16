@@ -8,10 +8,10 @@ pub mod buffer_mod {
 
     use crossterm::cursor::MoveTo;
     use crossterm::execute;
-    use crossterm::style::{Color, Stylize};
+    use crossterm::style::Stylize;
     use crossterm::{
         event::{self, KeyCode, KeyEvent},
-        terminal::{self, ClearType},
+        terminal::{self, Clear, ClearType},
     };
 
     lazy_static! {
@@ -59,12 +59,14 @@ pub mod buffer_mod {
             let reader = BufReader::new(file);
             for (y, line) in reader.lines().enumerate() {
                 let line = line?;
+                let mut new_row = vec![' '; line.len()];
                 for (x, char) in line.chars().enumerate() {
                     if x < self.max_x && y < self.max_y {
-                        self.container[y].push(char);
+                        new_row[x] = char;
                     }
                 }
-                self.container.push(vec![' ']);
+                self.container.push(new_row);
+                self.lines_count += 1;
             }
             Ok(())
         }
@@ -87,7 +89,10 @@ pub mod buffer_mod {
             return self.container[coord.y][coord.x];
         }
         pub fn put_on(&mut self, x: usize, y: usize, elem: char) {
-            if x < self.max_x as usize && y < self.max_y as usize {
+            if elem == '£' {
+                self.container.push(vec![' ']);
+                execute!(io::stdout(), Clear(ClearType::All)).unwrap();
+            } else if x < self.max_x as usize && y < self.max_y as usize {
                 if y >= self.container.len() {
                     while y >= self.container.len() {
                         self.container.push(vec![' ']);
@@ -96,23 +101,16 @@ pub mod buffer_mod {
                 if x >= self.container[y].len() {
                     self.container[y].push(elem);
                 }
-                self.container[y][x] = elem;
+                if x == self.container[y].len() && x > 0 {
+                    self.container[y][x - 1] = elem;
+                    self.pointer_pos.x -= 1;
+                } else {
+                    self.container[y][x] = elem;
+                }
             }
         }
-        pub fn update_prev_char(&mut self, coord: &mut Coord, direction: char) {
-            let mut previous_char = PREVIOUS_CHAR.lock().unwrap();
-            if *previous_char != ' ' {
-                match direction {
-                    'u' => self.put_on(coord.x, coord.y + 1, *previous_char),
-                    'd' => self.put_on(coord.x, coord.y - 1, *previous_char),
-                    'r' => self.put_on(coord.x - 1, coord.y, *previous_char),
-                    's' => self.put_on(coord.x, coord.y - 1, *previous_char),
-                    'l' => self.put_on(coord.x + 1, coord.y, *previous_char),
-                    'm' => self.put_on(self.max_x - 1, coord.y + 1, *previous_char),
-                    _ => {}
-                };
-            }
-            *previous_char = self.get_on_this_pos(coord);
+        pub fn insert_on(&mut self, coord: &mut Coord, elem: char) {
+            self.container[coord.y].insert(coord.x, elem);
         }
         pub fn moove_on(&mut self, coord: &mut Coord, direction: char, elem: char) {
             match direction {
@@ -124,10 +122,12 @@ pub mod buffer_mod {
                         }
                         self.pointer_pos.x = coord.x;
                         self.pointer_pos.y = coord.y;
-                        if elem == '|' {
+                        /*if elem == '|' {
                             self.update_prev_char(coord, 'u');
                         }
                         self.put_on(coord.x as usize, (coord.y) as usize, elem);
+                        */
+                        execute!(io::stdout(), Clear(ClearType::All)).unwrap();
                     }
                 }
                 'd' => {
@@ -136,10 +136,11 @@ pub mod buffer_mod {
                         coord.x = self.container[coord.y].len() - 1;
                         self.pointer_pos.x = coord.x;
                         self.pointer_pos.y = coord.y;
-                        if elem == '|' {
+                        /*if elem == '|' {
                             self.update_prev_char(coord, 'd');
                         }
-                        self.put_on(coord.x as usize, (coord.y) as usize, elem);
+                        self.put_on(coord.x as usize, (coord.y) as usize, elem);*/
+                        execute!(io::stdout(), Clear(ClearType::All)).unwrap();
                     }
                 }
                 'r' => {
@@ -150,48 +151,59 @@ pub mod buffer_mod {
                         }
                         self.pointer_pos.x = coord.x;
                         self.pointer_pos.y = coord.y;
+                        /*
                         if elem == '|' {
                             self.update_prev_char(coord, 'r');
                         }
-                        self.put_on((coord.x) as usize, coord.y as usize, elem);
+                        self.put_on((coord.x) as usize, coord.y as usize, elem);*/
+                        execute!(io::stdout(), Clear(ClearType::All)).unwrap();
                     } else if coord.x == self.max_x - 1 && coord.y < self.max_y - 1 {
                         coord.x = 0;
                         coord.y += 1;
                         self.pointer_pos.x = coord.x;
                         self.pointer_pos.y = coord.y;
+                        /*
                         if elem == '|' {
                             self.update_prev_char(coord, 's');
                         }
                         self.put_on((coord.x) as usize, coord.y as usize, elem);
+                        */
+                        execute!(io::stdout(), Clear(ClearType::All)).unwrap();
                     }
                 }
                 'l' => {
-                    if coord.x > 1 {
+                    if coord.x > 0 {
                         coord.x -= 1;
                         self.pointer_pos.x = coord.x;
                         self.pointer_pos.y = coord.y;
+                        /*
                         if elem == '|' {
                             self.update_prev_char(coord, 'l');
                         }
                         self.put_on(coord.x as usize, coord.y as usize, elem);
+                        */
+                        execute!(io::stdout(), Clear(ClearType::All)).unwrap();
                     } else if coord.x == 0 && coord.y > 0 {
-                        coord.x = self.max_x - 1;
+                        coord.x = self.container[coord.y].len() - 1;
                         coord.y -= 1;
                         self.pointer_pos.x = coord.x;
                         self.pointer_pos.y = coord.y;
+                        /*
                         if elem == '|' {
                             self.update_prev_char(coord, 'm');
                         }
-                        self.put_on(coord.x as usize, coord.y as usize, elem);
+                        self.put_on(coord.x as usize, coord.y as usize, elem);*/
+                        execute!(io::stdout(), Clear(ClearType::All)).unwrap();
                     }
                 }
                 'e' => {
-                    if coord.y < self.max_y - 1 {
+                    if coord.y < self.max_y {
                         coord.x = 0;
                         coord.y += 1;
                         self.pointer_pos.x = coord.x;
                         self.pointer_pos.y = coord.y;
-                        self.put_on((coord.x) as usize, coord.y as usize, elem);
+                        self.lines_count += 1;
+                        self.put_on((coord.x) as usize, coord.y as usize, '£');
                     }
                 }
                 _ => {}
@@ -220,7 +232,11 @@ pub mod buffer_mod {
                         coord.x += 1;
                         self.pointer_pos.x = coord.x;
                         self.pointer_pos.y = coord.y;
-                        self.put_on((coord.x) as usize, coord.y as usize, elem);
+                        if coord.x < self.container[coord.y].len() - 1 && coord.x > 0 {
+                            self.insert_on(coord, elem);
+                        } else {
+                            self.put_on((coord.x) as usize, coord.y as usize, elem);
+                        }
                     } else if coord.x == self.max_x - 1 && coord.y < self.max_y - 1 {
                         coord.x = 0;
                         coord.y += 1;
@@ -259,9 +275,13 @@ pub mod buffer_mod {
 
         pub fn destroy_pointer(&mut self, coord: &mut Coord, direction: char) {
             if direction == 'l' {
-                self.put_on(coord.x, coord.y, ' ');
+                if coord.x > 0 {
+                    self.container[coord.y].remove(coord.x);
+                    self.pointer_pos.x -= 1;
+                    execute!(io::stdout(), Clear(ClearType::All)).unwrap();
+                }
             } else if direction == 'e' {
-                self.put_on(coord.x, coord.y, '\n');
+                self.put_on(coord.x, coord.y, ' ');
             } else if direction == 'd' {
                 if coord.x >= self.container[coord.y].len() {
                     return;
@@ -269,7 +289,6 @@ pub mod buffer_mod {
                 self.put_on(coord.x, coord.y, ' ');
             }
         }
-
         pub fn listen(&mut self) -> io::Result<()> {
             let mut coord = Coord::init();
             execute!(io::stdout(), terminal::Clear(ClearType::All))?;
@@ -339,32 +358,33 @@ pub mod buffer_mod {
                                     command_mode = true;
                                 }
                                 KeyCode::Up => {
-                                    self.destroy_pointer(&mut coord, 'd');
+                                    //self.destroy_pointer(&mut coord, 'd');
                                     self.moove_on(&mut coord, 'u', '|');
                                 }
                                 KeyCode::Down => {
-                                    self.destroy_pointer(&mut coord, 'd');
+                                    //self.destroy_pointer(&mut coord, 'd');
                                     self.moove_on(&mut coord, 'd', '|');
                                 }
                                 KeyCode::Left => {
-                                    self.destroy_pointer(&mut coord, 'l');
+                                    //self.destroy_pointer(&mut coord, 'l');
                                     self.moove_on(&mut coord, 'l', '|');
                                 }
                                 KeyCode::Right => {
-                                    self.destroy_pointer(&mut coord, 'd');
+                                    //self.destroy_pointer(&mut coord, 'd');
                                     self.moove_on(&mut coord, 'r', '|');
                                 }
                                 KeyCode::Char(c) => {
-                                    self.put_on(self.pointer_pos.x, self.pointer_pos.y, c);
-                                    self.write_on(&mut coord, 'r', '|');
+                                    //self.put_on(self.pointer_pos.x, self.pointer_pos.y, c);
+                                    self.write_on(&mut coord, 'r', c);
+                                    //self.write_on(&mut coord, 'r', '|');
                                 }
                                 KeyCode::Backspace => {
                                     self.destroy_pointer(&mut coord, 'l');
-                                    self.write_on(&mut coord, 'l', '|');
+                                    self.moove_on(&mut coord, 'l', '|');
                                 }
                                 KeyCode::Enter => {
-                                    self.destroy_pointer(&mut coord, 'e');
-                                    self.write_on(&mut coord, 'e', '|');
+                                    //self.destroy_pointer(&mut coord, 'e');
+                                    self.moove_on(&mut coord, 'e', '|');
                                 }
                                 _ => {}
                             }
@@ -386,15 +406,16 @@ pub mod buffer_mod {
         pub fn super_display(&self) {
             execute!(
                 io::stdout(),
-                MoveTo((self.max_x - 10) as u16, self.max_y as u16)
+                MoveTo((self.max_x - 30) as u16, self.max_y as u16)
             )
             .unwrap();
             self.pointer_pos.display();
+            print!("line len : {}", self.container[self.pointer_pos.y].len());
             for (y, row) in self.container.iter().enumerate() {
                 execute!(io::stdout(), MoveTo(0, y as u16)).unwrap();
                 for (x, cell) in row.iter().enumerate() {
                     if self.pointer_pos.x == x && self.pointer_pos.y == y {
-                        print!("{}", cell.with(Color::Red));
+                        print!("{}{}", cell.blue(), "|".red());
                     } else if *cell == '\n' {
                         print!(" ");
                     } else {

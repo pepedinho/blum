@@ -1,1 +1,4 @@
-/target
+/target/armv7-unknown-linux-gnueabihf
+/target/debug
+/target/CACHEDIR.TAG
+test
