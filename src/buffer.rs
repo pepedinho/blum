@@ -1,5 +1,8 @@
 pub mod buffer_mod {
+
+    mod popup;
     use lazy_static::lazy_static;
+    use popup::Popup;
     use std::fs::File;
     use std::io::{BufRead, BufReader, Write};
     use std::path::Path;
@@ -93,7 +96,7 @@ pub mod buffer_mod {
                 self.container.push(vec![' ']);
                 execute!(io::stdout(), Clear(ClearType::All)).unwrap();
             } else if x < self.max_x as usize && y < self.max_y as usize {
-                if y >= self.container.len() {
+                if y > self.container.len() {
                     while y >= self.container.len() {
                         self.container.push(vec![' ']);
                     }
@@ -144,7 +147,7 @@ pub mod buffer_mod {
                     }
                 }
                 'r' => {
-                    if coord.x < self.container[coord.y].len() {
+                    if coord.x < self.container[coord.y].len() - 1 {
                         coord.x += 1;
                         if elem == '|' && coord.x >= self.container[coord.y].len() {
                             return;
@@ -331,8 +334,20 @@ pub mod buffer_mod {
                                             if let Err(e) = self.save_to_file(filename.as_str()) {
                                                 eprintln!("error during saving : {}", e);
                                             }
+                                            break;
+                                        } else {
+                                            let mut pop =
+                                                Popup::new("No filename", "your file is no name");
+                                            pop.show(self.max_x, self.max_y);
+                                            command_buffer.clear();
+                                            if let Err(e) = pop.listen(&mut command_buffer, self) {
+                                                eprintln!(
+                                                    "error during listening your keyboard: {}",
+                                                    e
+                                                );
+                                            }
+                                            break;
                                         }
-                                        break;
                                     }
                                     _ => {
                                         command_mode = false;
