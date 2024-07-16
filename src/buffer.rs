@@ -27,6 +27,7 @@ pub mod buffer_mod {
         pub pointer_pos: Coord,
         pub max_x: usize,
         pub max_y: usize,
+        pub lines_count: usize,
         pub filename: Vec<String>,
         pub container: Vec<Vec<char>>,
     }
@@ -60,18 +61,21 @@ pub mod buffer_mod {
                 let line = line?;
                 for (x, char) in line.chars().enumerate() {
                     if x < self.max_x && y < self.max_y {
-                        self.container[y][x] = char;
+                        self.container[y].push(char);
                     }
                 }
+                self.container.push(vec![' ']);
             }
             Ok(())
         }
         pub fn init(x: usize, y: usize, filename: Vec<String>) -> Buffer {
             let pointer_pos = Coord::init();
-            let container: Vec<Vec<char>> = vec![vec![' '; x as usize]; y as usize];
+            let container: Vec<Vec<char>> = vec![vec![' '; 1]; 1];
             let max_x = x;
             let max_y = y;
+            let lines_count: usize = 0;
             Buffer {
+                lines_count,
                 filename,
                 max_x,
                 max_y,
@@ -84,6 +88,14 @@ pub mod buffer_mod {
         }
         pub fn put_on(&mut self, x: usize, y: usize, elem: char) {
             if x < self.max_x as usize && y < self.max_y as usize {
+                if y >= self.container.len() {
+                    while y >= self.container.len() {
+                        self.container.push(vec![' ']);
+                    }
+                }
+                if x >= self.container[y].len() {
+                    self.container[y].push(elem);
+                }
                 self.container[y][x] = elem;
             }
         }
@@ -107,6 +119,9 @@ pub mod buffer_mod {
                 'u' => {
                     if coord.y > 0 {
                         coord.y -= 1;
+                        if coord.x > self.container[coord.y].len() - 1 {
+                            coord.x = self.container[coord.y].len() - 1;
+                        }
                         self.pointer_pos.x = coord.x;
                         self.pointer_pos.y = coord.y;
                         if elem == '|' {
@@ -116,8 +131,9 @@ pub mod buffer_mod {
                     }
                 }
                 'd' => {
-                    if coord.y < self.max_y - 1 {
+                    if coord.y < self.lines_count {
                         coord.y += 1;
+                        coord.x = self.container[coord.y].len() - 1;
                         self.pointer_pos.x = coord.x;
                         self.pointer_pos.y = coord.y;
                         if elem == '|' {
@@ -127,8 +143,11 @@ pub mod buffer_mod {
                     }
                 }
                 'r' => {
-                    if coord.x < self.max_x - 1 {
+                    if coord.x < self.container[coord.y].len() {
                         coord.x += 1;
+                        if elem == '|' && coord.x >= self.container[coord.y].len() {
+                            return;
+                        }
                         self.pointer_pos.x = coord.x;
                         self.pointer_pos.y = coord.y;
                         if elem == '|' {
@@ -147,7 +166,7 @@ pub mod buffer_mod {
                     }
                 }
                 'l' => {
-                    if coord.x > 0 {
+                    if coord.x > 1 {
                         coord.x -= 1;
                         self.pointer_pos.x = coord.x;
                         self.pointer_pos.y = coord.y;
@@ -217,7 +236,7 @@ pub mod buffer_mod {
                         self.pointer_pos.y = coord.y;
                         self.put_on(coord.x as usize, coord.y as usize, elem);
                     } else if coord.x == 0 && coord.y > 0 {
-                        coord.x = self.max_x - 1;
+                        coord.x = self.container[coord.y - 1].len() - 1;
                         coord.y -= 1;
                         self.pointer_pos.x = coord.x;
                         self.pointer_pos.y = coord.y;
@@ -228,9 +247,10 @@ pub mod buffer_mod {
                     if coord.y < self.max_y - 1 {
                         coord.x = 0;
                         coord.y += 1;
+                        self.lines_count += 1;
                         self.pointer_pos.x = coord.x;
                         self.pointer_pos.y = coord.y;
-                        self.put_on((coord.x) as usize, coord.y as usize, elem);
+                        self.put_on(coord.x as usize, coord.y as usize, elem);
                     }
                 }
                 _ => {}
@@ -242,6 +262,11 @@ pub mod buffer_mod {
                 self.put_on(coord.x, coord.y, ' ');
             } else if direction == 'e' {
                 self.put_on(coord.x, coord.y, '\n');
+            } else if direction == 'd' {
+                if coord.x >= self.container[coord.y].len() {
+                    return;
+                }
+                self.put_on(coord.x, coord.y, ' ');
             }
         }
 
@@ -290,7 +315,9 @@ pub mod buffer_mod {
                                         }
                                         break;
                                     }
-                                    _ => {}
+                                    _ => {
+                                        command_mode = false;
+                                    }
                                 },
                                 KeyCode::Esc => {
                                     command_mode = false;
@@ -312,11 +339,11 @@ pub mod buffer_mod {
                                     command_mode = true;
                                 }
                                 KeyCode::Up => {
-                                    self.destroy_pointer(&mut coord, 'l');
+                                    self.destroy_pointer(&mut coord, 'd');
                                     self.moove_on(&mut coord, 'u', '|');
                                 }
                                 KeyCode::Down => {
-                                    self.destroy_pointer(&mut coord, 'l');
+                                    self.destroy_pointer(&mut coord, 'd');
                                     self.moove_on(&mut coord, 'd', '|');
                                 }
                                 KeyCode::Left => {
@@ -324,7 +351,7 @@ pub mod buffer_mod {
                                     self.moove_on(&mut coord, 'l', '|');
                                 }
                                 KeyCode::Right => {
-                                    self.destroy_pointer(&mut coord, 'l');
+                                    self.destroy_pointer(&mut coord, 'd');
                                     self.moove_on(&mut coord, 'r', '|');
                                 }
                                 KeyCode::Char(c) => {
@@ -347,6 +374,7 @@ pub mod buffer_mod {
                     }
                 }
             }
+            terminal::disable_raw_mode()?;
             Ok(())
         }
         pub fn display_command(&self, command: &String) {
