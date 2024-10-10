@@ -1,9 +1,8 @@
 use std::env;
-
-use buffer::buffer_mod::Buffer;
-use crossterm::terminal::size;
-
 mod buffer;
+
+use buffer::buffer::*;
+use crossterm::terminal::size;
 
 fn main() {
     let args: Vec<String> = env::args().collect();

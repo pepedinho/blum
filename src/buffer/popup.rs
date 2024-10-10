@@ -1,3 +1,5 @@
+use super::buffer::{Buffer, Coord};
+
 use std::{
     io::{self, Write},
     time::Duration,
@@ -10,8 +12,6 @@ use crossterm::{
     execute,
     terminal::{Clear, ClearType},
 };
-
-use super::{Buffer, Coord};
 
 pub struct Popup {
     pub title: String,
